@@ -18,13 +18,6 @@
       text-align: center; pointer-events: none;
       text-shadow: 0 0 10px #ff00ff, 0 0 30px #ff00ff;
     }
-    #debug {
-      position: fixed; bottom: 20px; left: 20px;
-      color: #fff; font: 13px 'Courier New', monospace;
-      pointer-events: none; line-height: 1.8;
-      background: rgba(0,0,0,0.5); padding: 10px 14px; border-radius: 6px;
-      border-left: 2px solid #00ffff;
-    }
     #cursor {
       position: fixed; width: 14px; height: 14px; border-radius: 50%;
       background: #fff;
@@ -60,6 +53,18 @@
     .overlay .subtitle {
       color: #555; font-size: 14px; letter-spacing: 6px; margin-bottom: 16px;
     }
+    .instructions {
+      margin-top: 20px; border-top: 1px solid #222;
+      padding-top: 16px; display: flex; gap: 32px;
+      font-size: 12px; letter-spacing: 2px; color: #444;
+    }
+    .instructions .col { display: flex; flex-direction: column; gap: 7px; }
+    .instructions .row { display: flex; gap: 10px; align-items: center; }
+    .instructions .key {
+      border: 1px solid #333; color: #00ffff; padding: 2px 8px;
+      font-size: 11px; white-space: nowrap; min-width: 28px; text-align: center;
+    }
+    .instructions .label { color: #555; }
     .menu-btn {
       background: transparent; border: 1px solid #00ffff;
       color: #00ffff; font: bold 18px 'Courier New', monospace;
@@ -93,7 +98,6 @@
   <div id="cursor"></div>
   <div id="score" style="display:none">0 — 0</div>
   <div id="message" style="display:none"></div>
-  <div id="debug"></div>
   <div id="hit-flash"></div>
 
   <!-- Start Menu -->
@@ -103,6 +107,18 @@
     <button class="menu-btn easy" data-speed="0.7"  data-color="0x00ff88">JOHN   <span class="diff">SUPER EASY</span></button>
     <button class="menu-btn med"  data-speed="0.25" data-color="0x00ffff">ARYAN  <span class="diff">MEDIUM</span></button>
     <button class="menu-btn hard" data-speed="0.05" data-color="0xff00ff">MANAN  <span class="diff">DIFFICULT</span></button>
+    <div class="instructions">
+      <div class="col">
+        <div class="row"><span class="key">MOUSE</span><span class="label">MOVE PADDLE</span></div>
+        <div class="row"><span class="key">LMB</span><span class="label">LUNGE / POWER SHOT</span></div>
+        <div class="row"><span class="key">ESC</span><span class="label">PAUSE</span></div>
+      </div>
+      <div class="col">
+        <div class="row"><span class="label">FIRST TO <span style="color:#ff8c00">6</span> WINS</span></div>
+        <div class="row"><span class="label">DEUCE AT <span style="color:#ff8c00">5 — 5</span></span></div>
+        <div class="row"><span class="label">WIN BY 2 TO CLAIM MATCH</span></div>
+      </div>
+    </div>
   </div>
 
   <!-- Game Over -->
@@ -174,12 +190,346 @@
     const matMagenta = new THREE.MeshBasicMaterial({ color: 0xff00ff });
     const matWhite   = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const matDimCyan = new THREE.MeshBasicMaterial({ color: 0x003333 });
-    const matDark    = new THREE.MeshStandardMaterial({ color: 0x020215, roughness: 0.8, metalness: 0.2 });
+    const matDark    = new THREE.MeshBasicMaterial({ color: 0x020215 });
 
     // ---- Neon grid floor ----
     const gridA = new THREE.GridHelper(60, 60, 0x004466, 0x002233);
     gridA.position.y = -0.85;
     scene.add(gridA);
+
+    // ======================================================
+    // CYBERPUNK ENVIRONMENT
+    // ======================================================
+    const envSpeeders = [], envRainCols = [], envBeams = [];
+    let envTime = 0;
+
+    // InstancedMesh for windows (3 colour variants — keeps draw calls at 3)
+    const _winDummy  = new THREE.Object3D();
+    const _winGeo    = new THREE.BoxGeometry(0.12, 0.12, 0.04);
+    let _cIdx = 0, _mIdx = 0, _oIdx = 0;
+    const winCyan = new THREE.InstancedMesh(_winGeo, new THREE.MeshBasicMaterial({ color: 0x00ffff }), 250);
+    const winMag  = new THREE.InstancedMesh(_winGeo, new THREE.MeshBasicMaterial({ color: 0xff00ff }), 200);
+    const winOrg  = new THREE.InstancedMesh(_winGeo, new THREE.MeshBasicMaterial({ color: 0xff8800 }), 150);
+    scene.add(winCyan); scene.add(winMag); scene.add(winOrg);
+
+    const _outlineColors = [0x00ffff, 0xff00ff, 0xff6600];
+    let   _outlineIdx    = 0;
+
+    function _placeWindow(wx, wy, wz, rotY) {
+      _winDummy.position.set(wx, wy, wz);
+      _winDummy.rotation.y = rotY || 0;
+      _winDummy.updateMatrix();
+      const r = Math.random();
+      if      (r < 0.45) { if (_cIdx < 250) winCyan.setMatrixAt(_cIdx++, _winDummy.matrix); }
+      else if (r < 0.75) { if (_mIdx < 200) winMag .setMatrixAt(_mIdx++, _winDummy.matrix); }
+      else               { if (_oIdx < 150) winOrg .setMatrixAt(_oIdx++, _winDummy.matrix); }
+    }
+
+    const _signColors = [0x00ffff, 0xff00ff, 0xff8800, 0x00ff88, 0xff4488];
+
+    function makeBuilding(x, z, w, h, d) {
+      const geo  = new THREE.BoxGeometry(w, h, d);
+      const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x060614 }));
+      const baseY = h / 2 - 0.85;
+      mesh.position.set(x, baseY, z);
+      scene.add(mesh);
+
+      // Neon outline on ~40% of buildings
+      if (Math.random() < 0.4) {
+        const col  = _outlineColors[_outlineIdx++ % 3];
+        const line = new THREE.LineSegments(
+          new THREE.EdgesGeometry(geo),
+          new THREE.LineBasicMaterial({ color: col })
+        );
+        line.position.copy(mesh.position);
+        scene.add(line);
+      }
+
+      // Grid windows on front face — rows & columns like a real building
+      const cols    = Math.max(1, Math.floor(w / 0.28));
+      const rows    = Math.max(1, Math.floor(h / 0.35));
+      const winZ    = z + d / 2 + 0.03;
+      const xStart  = x - (cols - 1) * 0.28 / 2;
+      const yStart  = (baseY - h / 2) + 0.3;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (Math.random() < 0.65) {   // 65% of grid cells lit
+            _placeWindow(xStart + c * 0.28, yStart + r * 0.35, winZ);
+          }
+        }
+      }
+
+      // Neon sign board on front face — ~50% of buildings get one
+      if (Math.random() < 0.5) {
+        const signW   = Math.min(w * 0.8, 0.9 + Math.random() * 0.6);
+        const signH   = 0.12 + Math.random() * 0.1;
+        const signCol = _signColors[Math.floor(Math.random() * _signColors.length)];
+        const sign    = new THREE.Mesh(
+          new THREE.BoxGeometry(signW, signH, 0.04),
+          new THREE.MeshBasicMaterial({ color: signCol })
+        );
+        // Place near top of building
+        sign.position.set(x, baseY + h * 0.35 + signH, winZ + 0.02);
+        scene.add(sign);
+      }
+
+      // Horizontal floor-band stripes (dark ledges every ~1 unit of height)
+      const ledgeCount = Math.floor(h / 1.2);
+      for (let li = 1; li < ledgeCount; li++) {
+        const ledge = new THREE.Mesh(
+          new THREE.BoxGeometry(w + 0.06, 0.04, d + 0.06),
+          new THREE.MeshBasicMaterial({ color: 0x0a0a1a })
+        );
+        ledge.position.set(x, baseY - h / 2 + li * 1.2, z);
+        scene.add(ledge);
+      }
+    }
+
+    // Back wall — starts well behind the AI end, not right behind the table
+    const backXGrid = [-14, -10, -7, -3, 0, 3, 7, 10, 14];
+    for (let xi = 0; xi < backXGrid.length; xi++) {
+      let zCur = -18;
+      while (zCur > -50) {
+        const bx = backXGrid[xi] + (Math.random() - 0.5) * 2.5;
+        const bh = 2 + Math.random() * 8;      // smaller — looks distant
+        const bw = 0.8 + Math.random() * 1.6;
+        const bd = 0.8 + Math.random() * 1.6;
+        if (Math.random() < 0.8) makeBuilding(bx, zCur, bw, bh, bd);
+        zCur -= 5 + Math.random() * 5;
+      }
+    }
+    // Side flanks — corridor from camera to far end, pushed out in X so they feel distant
+    const flankRows = [
+      { xBase: -9,  xSpread: 3 },   // left
+      { xBase:  9,  xSpread: 3 },   // right
+    ];
+    for (const row of flankRows) {
+      let zCur = 8;
+      while (zCur > -46) {
+        const sign = row.xBase < 0 ? -1 : 1;
+        const bx   = sign * (Math.abs(row.xBase) + Math.random() * row.xSpread);
+        const bh   = 1.5 + Math.random() * 5;   // small — looks far away
+        const bw   = 0.7 + Math.random() * 1.2;
+        const bd   = 1.2 + Math.random() * 2.5;
+        makeBuilding(bx, zCur, bw, bh, bd);
+        zCur -= 4 + Math.random() * 4;
+      }
+    }
+
+    // Finalize instanced windows
+    winCyan.instanceMatrix.needsUpdate = true; winCyan.count = _cIdx;
+    winMag .instanceMatrix.needsUpdate = true; winMag .count = _mIdx;
+    winOrg .instanceMatrix.needsUpdate = true; winOrg .count = _oIdx;
+
+    // Neon signs
+    ;[
+      [-9,  5, -14, 0,         0x00ffff],
+      [ 8,  6, -17, 0,         0xff00ff],
+      [-13, 4, -22, 0,         0xff8800],
+      [ 11, 7, -21, 0,         0x00ff88],
+    ].forEach(([x, y, z, ry, col]) => {
+      const sign = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.8, 0.55),
+        new THREE.MeshBasicMaterial({ color: col, side: THREE.DoubleSide })
+      );
+      sign.position.set(x, y, z);
+      sign.rotation.y = ry;
+      scene.add(sign);
+    });
+
+    // Ground glow orbs + point lights
+    ;[
+      [-9, -12, 0x00ffff], [ 9, -12, 0xff00ff],
+      [-14,-20, 0xff8800], [14, -20, 0x00ffff],
+      [-6, -30, 0xff00ff], [ 6, -30, 0xff8800],
+      [-11,-18, 0x00ff88], [11, -18, 0x00ffff],
+    ].forEach(([x, z, col]) => {
+      const orb = new THREE.Mesh(
+        new THREE.SphereGeometry(0.1, 6, 6),
+        new THREE.MeshBasicMaterial({ color: col })
+      );
+      orb.position.set(x, -0.75, z);
+      scene.add(orb);
+      const pl = new THREE.PointLight(col, 0.5, 14);
+      pl.position.set(x, 1, z);
+      scene.add(pl);
+    });
+
+    // Stars
+    {
+      const count = 120, starPos = new Float32Array(count * 3);
+      for (let i = 0; i < count; i++) {
+        starPos[i*3]   = (Math.random() - 0.5) * 60;
+        starPos[i*3+1] =  5 + Math.random() * 18;
+        starPos[i*3+2] = -10 - Math.random() * 45;
+      }
+      const sg = new THREE.BufferGeometry();
+      sg.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+      scene.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xffffff, size: 0.09, sizeAttenuation: true })));
+    }
+
+    // Flying speeders
+    ;[
+      [-12, 3.5,  5.2, 0x00ffff, -25],
+      [-18, 6.0, -3.8, 0xff00ff,  25],
+      [-10, 2.5,  7.1, 0xff8800, -25],
+      [-25, 8.0, -4.4, 0x00ff88,  25],
+      [-15, 4.5,  6.0, 0xffffff, -25],
+    ].forEach(([z, y, speed, color, xStart]) => {
+      const g = new THREE.Group();
+      const mat = new THREE.MeshBasicMaterial({ color });
+      g.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.08, 0.18), mat)));
+      const core = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.055, 0.10), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      g.add(core);
+      [-0.32, 0.32].forEach(ox => {
+        const pod = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.05, 0.08), mat);
+        pod.position.x = ox; g.add(pod);
+      });
+      g.position.set(xStart, y, z);
+      scene.add(g);
+      const trailMeshes = Array.from({ length: 4 }, (_, i) => {
+        const t = new THREE.Mesh(
+          new THREE.SphereGeometry(0.035, 4, 4),
+          new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55 - i * 0.12 })
+        );
+        scene.add(t); return t;
+      });
+      envSpeeders.push({ g, speed, y, z, xMin: -26, xMax: 26, trailMeshes });
+    });
+
+    // Cyber rain columns
+    const rainColors = [0x00ffff, 0x00ff88, 0xff00ff];
+    for (let i = 0; i < 12; i++) {
+      const rx = -18 + (i % 6) * 7.2 + (Math.random() - 0.5) * 2;
+      const rz = (i < 6 ? -20 : -34) - Math.random() * 8;
+      const col = rainColors[i % 3];
+      const count = 40;
+      const positions = new Float32Array(count * 3);
+      const speeds    = new Float32Array(count);
+      for (let j = 0; j < count; j++) {
+        positions[j*3]   = rx + (Math.random() - 0.5) * 0.4;
+        positions[j*3+1] = -1 + Math.random() * 22;
+        positions[j*3+2] = rz;
+        speeds[j] = 2 + Math.random() * 4;
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      const pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: col, size: 0.09, sizeAttenuation: true, transparent: true, opacity: 0.85 }));
+      scene.add(pts);
+      envRainCols.push({ positions, speeds, geo, pts });
+    }
+
+    // (scan beams removed)
+
+    function animateEnvironment(dt) {
+      envTime += dt;
+      // Speeders
+      for (const s of envSpeeders) {
+        s.g.position.x += s.speed * dt;
+        if (s.speed > 0 && s.g.position.x > s.xMax) s.g.position.x = s.xMin;
+        if (s.speed < 0 && s.g.position.x < s.xMin) s.g.position.x = s.xMax;
+        const dir = -Math.sign(s.speed);
+        s.trailMeshes.forEach((t, i) => {
+          t.position.set(s.g.position.x + dir * (0.38 + i * 0.24), s.y, s.z);
+        });
+      }
+      // Cyber rain
+      for (const col of envRainCols) {
+        const p = col.positions;
+        for (let i = 0; i < 40; i++) {
+          p[i*3+1] -= col.speeds[i] * dt;
+          if (p[i*3+1] < -1.5) p[i*3+1] = 12 + Math.random() * 10;
+        }
+        col.geo.attributes.position.needsUpdate = true;
+      }
+    }
+    // ---- Spiderman Easter Egg (Aryan only) ----
+    let isAryan = false;
+    let spiderSwingT = 0, spiderAnchorIdx = 0;
+
+    const spiderAnchors = [
+      new THREE.Vector3(-7,  5, -10),
+      new THREE.Vector3( 6,  6, -12),
+      new THREE.Vector3(-9,  5, -11),
+      new THREE.Vector3( 8,  6, -10),
+      new THREE.Vector3(-5,  5.5, -11),
+    ];
+
+    // Build figure
+    const spiderGroup = new THREE.Group();
+    const sRed  = new THREE.MeshBasicMaterial({ color: 0xff1111 });
+    const sBlue = new THREE.MeshBasicMaterial({ color: 0x1133ff });
+
+    const spiderHead = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8), sRed);
+    spiderHead.position.y = 0.24;
+    spiderGroup.add(spiderHead);
+
+    // eyes (white dots)
+    [-0.04, 0.04].forEach(ex => {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.025, 6, 6), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      eye.position.set(ex, 0.26, 0.08);
+      spiderGroup.add(eye);
+    });
+
+    spiderGroup.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.2, 0.09), sRed)));
+
+    // legs
+    [-0.05, 0.05].forEach(lx => {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.18, 0.07), sBlue);
+      leg.position.set(lx, -0.19, 0);
+      spiderGroup.add(leg);
+    });
+
+    // arms
+    [-0.11, 0.11].forEach((ax, i) => {
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.15, 0.07), sRed);
+      arm.position.set(ax, 0.06, 0);
+      arm.rotation.z = i === 0 ? 0.5 : -0.5;
+      spiderGroup.add(arm);
+    });
+
+    spiderGroup.visible = false;
+    scene.add(spiderGroup);
+
+    // Web line
+    const webPositions = new Float32Array(6);
+    const webGeo = new THREE.BufferGeometry();
+    webGeo.setAttribute('position', new THREE.BufferAttribute(webPositions, 3));
+    const webLine = new THREE.Line(webGeo, new THREE.LineBasicMaterial({ color: 0xddddff }));
+    webLine.visible = false;
+    scene.add(webLine);
+
+    function animateSpider(dt) {
+      spiderGroup.visible = isAryan;
+      webLine.visible     = isAryan;
+      if (!isAryan) return;
+
+      spiderSwingT += dt;
+      const swingPeriod = 2.2;
+      const anchor  = spiderAnchors[spiderAnchorIdx];
+      const webLen  = 2.2;
+      const angle   = Math.sin((spiderSwingT / swingPeriod) * Math.PI) * 0.75;
+
+      spiderGroup.position.set(
+        anchor.x + Math.sin(angle) * webLen,
+        anchor.y - Math.cos(angle) * webLen,
+        anchor.z
+      );
+      spiderGroup.rotation.z = -angle;
+
+      webPositions.set([anchor.x, anchor.y, anchor.z,
+        spiderGroup.position.x, spiderGroup.position.y, spiderGroup.position.z]);
+      webGeo.attributes.position.needsUpdate = true;
+
+      // Swing to next anchor after one full arc
+      if (spiderSwingT > swingPeriod * 2) {
+        spiderSwingT = 0;
+        spiderAnchorIdx = (spiderAnchorIdx + 1) % spiderAnchors.length;
+      }
+    }
+    // ======================================================
+    // END CYBERPUNK ENVIRONMENT
+    // ======================================================
 
     // ---- Table ----
     const TW = 5, TL = 9, TH = 0.08;
@@ -268,10 +618,10 @@
     scene.add(ballMesh);
 
     // Ball shadow (shows XZ position on table — critical for 3D depth perception)
-    const shadowMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, depthWrite: false });
-    const shadowMesh = new THREE.Mesh(new THREE.CircleGeometry(0.14, 20), shadowMat);
+    const shadowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthWrite: false });
+    const shadowMesh = new THREE.Mesh(new THREE.CircleGeometry(0.1, 16), shadowMat);
     shadowMesh.rotation.x = -Math.PI / 2;
-    shadowMesh.position.y = 0.003;
+    shadowMesh.position.y = 0.005;
     scene.add(shadowMesh);
 
     // Ball trail
@@ -285,6 +635,36 @@
       return t;
     });
     const trailHistory = [];
+
+    // ---- Fire particles (speed boost effect) ----
+    const fireColors = [0xffffff, 0xffee00, 0xff8800, 0xff5500, 0xff2200];
+    const firePool = Array.from({ length: 60 }, (_, i) => {
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(0.038, 4, 4),
+        new THREE.MeshBasicMaterial({ color: fireColors[i % fireColors.length], transparent: true })
+      );
+      mesh.visible = false;
+      scene.add(mesh);
+      return { mesh, pos: new THREE.Vector3(), vel: new THREE.Vector3(), life: 0 };
+    });
+
+    function launchFire(pos, ballVelocity) {
+      const dir = ballVelocity.clone().normalize().negate();
+      let spawned = 0;
+      for (const p of firePool) {
+        if (p.life <= 0 && spawned < 10) {
+          p.pos.copy(pos);
+          p.vel.set(
+            dir.x * (1.5 + Math.random() * 2) + (Math.random() - 0.5) * 3,
+            1.5 + Math.random() * 4,
+            dir.z * (1.5 + Math.random() * 2) + (Math.random() - 0.5) * 3
+          );
+          p.life = 0.7 + Math.random() * 0.5;
+          p.mesh.visible = true;
+          spawned++;
+        }
+      }
+    }
 
     // ---- Firework particles ----
     const FIREWORK_COUNT = 80;
@@ -341,6 +721,8 @@
     let playerPaddleVelX = 0;
     let lastHitter = null; // 'player' | 'ai'
     let hasBounced = false; // did ball bounce on table since last paddle hit?
+    const GLOW_SPEED_MIN = 6.0;   // speed at which ball starts turning red
+    const GLOW_SPEED_MAX = 12.0;  // speed at which ball is fully red
     let mouseDown = false;
     document.addEventListener('mousedown', e => { if (e.button === 0) mouseDown = true; });
     document.addEventListener('mouseup',   e => { if (e.button === 0) mouseDown = false; });
@@ -371,7 +753,9 @@
     });
 
     function startGame(speed, color) {
-      aiError = speed;
+      aiError  = speed;
+      isAryan  = (speed === 0.25);
+      spiderSwingT = 0; spiderAnchorIdx = 0;
       setPaddleColor(aiPaddle, color);
       playerScore  = 0;
       aiScore      = 0;
@@ -433,8 +817,8 @@
         const rawSpeed = Math.hypot(ballVel.x, ballVel.y, ballVel.z);
         const speed = isPlayer
           ? (mouseDown
-              ? Math.max(4.0, Math.min(rawSpeed * 1.1 + 1.5, 12))   // lunge: power shot
-              : Math.max(1.5, Math.min(rawSpeed * 0.55, 6)))          // passive: absorbs speed
+              ? Math.max(6.0, Math.min(rawSpeed * 1.3 + 3.0, 14))   // lunge: smash
+              : Math.max(3.5, Math.min(rawSpeed * 1.08 + 1.5, 12))) // normal hit
           : Math.max(3.5, Math.min(rawSpeed * 1.08 + 1.5, 12));      // AI unchanged
 
         ballVel.z = isPlayer ? -speed * 0.85 : speed * 0.85;
@@ -445,6 +829,7 @@
         ballPos.z = isPlayer ? pz - BALL_R - 0.02 : pz + BALL_R + 0.02;
         lastHitter = isPlayer ? 'player' : 'ai';
         hasBounced = false;
+        if (isPlayer && mouseDown) launchFire(ballPos.clone(), ballVel.clone());
 
         if (isPlayer) {
           const el = document.getElementById('hit-flash');
@@ -581,12 +966,20 @@
       if (ballPos.z >  HALF_L + 0.5) { scorePoint(!hasBounced ? lastHitter === 'ai' : lastHitter === 'player'); return; }
       if (ballPos.z < -HALF_L - 0.5) { scorePoint(!hasBounced ? lastHitter === 'ai' : lastHitter === 'player'); return; }
 
+      // Ball glow: white → red based on live speed
+      const _bSpeed = Math.hypot(ballVel.x, ballVel.y, ballVel.z);
+      const _heat   = Math.max(0, Math.min(1, (_bSpeed - GLOW_SPEED_MIN) / (GLOW_SPEED_MAX - GLOW_SPEED_MIN)));
+      ballMesh.material.color.setRGB(1, 1 - _heat, 1 - _heat);
+      ballLight.color.setRGB(1, 1 - _heat * 0.8, 1 - _heat);
+      ballLight.intensity = 2 + _heat * _heat * 8;  // quadratic — dim heat still brightens fast
+
       // Ball mesh + light + shadow
       ballMesh.position.copy(ballPos);
       ballLight.position.copy(ballPos);
       shadowMesh.position.x = ballPos.x;
       shadowMesh.position.z = ballPos.z;
-      shadowMat.opacity = Math.max(0, 0.6 * (1 - ballPos.y / 1.8));
+      const _shadowT = Math.max(0, 1 - ballPos.y / 1.8);
+      shadowMat.opacity = 0.22 * _shadowT;
 
       // Trail
       trailHistory.unshift(ballPos.clone());
@@ -620,12 +1013,6 @@
       hf.style.left = ((paddleScreen.x + 1) / 2 * innerWidth) + 'px';
       hf.style.top  = ((-paddleScreen.y + 1) / 2 * innerHeight - 20) + 'px';
 
-      // Debug HUD
-      const ballSpeed = Math.hypot(ballVel.x, ballVel.y, ballVel.z);
-      document.getElementById('debug').innerHTML =
-        `ball speed:  <b>${ballSpeed.toFixed(2)}</b><br>` +
-        `last hitter: <b>${lastHitter || '—'}</b>`;
-
       // Paddle tilt: forehand (X > 0) vs backhand (X < 0)
       const maxTilt = Math.PI / 5; // 36 degrees
       playerPaddle.rotation.z = -(playerPaddle.position.x / HALF_W) * maxTilt;
@@ -647,6 +1034,22 @@
       }
 
       update(dt);
+      animateEnvironment(dt);
+      animateSpider(dt);
+
+      // Fire particle update
+      for (const p of firePool) {
+        if (p.life > 0) {
+          p.life -= dt * 1.4;
+          p.vel.y -= 1.5 * dt;
+          p.pos.addScaledVector(p.vel, dt);
+          p.mesh.position.copy(p.pos);
+          const t = Math.max(0, p.life);
+          p.mesh.scale.setScalar(0.3 + t * 1.5);
+          p.mesh.material.opacity = Math.min(1, t * 3.0);
+          if (p.life <= 0) p.mesh.visible = false;
+        }
+      }
 
       // Firework particle update (runs regardless of game state)
       for (const p of fwParticles) {

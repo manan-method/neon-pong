@@ -110,7 +110,7 @@
     <div class="instructions">
       <div class="col">
         <div class="row"><span class="key">MOUSE</span><span class="label">MOVE PADDLE</span></div>
-        <div class="row"><span class="key">LMB</span><span class="label">LUNGE / POWER SHOT</span></div>
+        <div class="row"><span class="key">Left Click</span><span class="label">LUNGE / POWER SHOT</span></div>
         <div class="row"><span class="key">ESC</span><span class="label">PAUSE</span></div>
       </div>
       <div class="col">
@@ -893,6 +893,58 @@
       msgEl.style.display = msg ? 'block' : 'none';
     }
 
+    // ---- Win / Lose environment effects ----
+    function flashScreen(color, durationMs) {
+      const el = document.createElement('div');
+      el.style.cssText = `position:fixed;inset:0;background:${color};pointer-events:none;z-index:900;opacity:1;transition:opacity ${durationMs}ms ease-out`;
+      document.body.appendChild(el);
+      requestAnimationFrame(() => requestAnimationFrame(() => { el.style.opacity = 0; }));
+      setTimeout(() => el.remove(), durationMs + 100);
+    }
+
+    function launchFireworksAt(x, y, z, color, count = 14) {
+      let spawned = 0;
+      for (const p of fwParticles) {
+        if (p.life <= 0 && spawned < count) {
+          p.mesh.material.color.setHex(color);
+          p.pos.set(x, y, z);
+          p.vel.set((Math.random() - 0.5) * 9, 2 + Math.random() * 7, (Math.random() - 0.5) * 9);
+          p.life = 0.8 + Math.random() * 0.7;
+          p.mesh.visible = true;
+          spawned++;
+        }
+      }
+    }
+
+    function triggerWinEffect() {
+      flashScreen('rgba(0,255,200,0.25)', 1200);
+      const bursts = [
+        [ 0,  2,  0,  0x00ffff], [-3,  1, -1, 0xff00ff],
+        [ 3,  1, -1,  0xffdd00], [-1,  4, -3, 0x00ff88],
+        [ 1,  4, -3,  0xff8800], [ 0,  5, -5, 0xffffff],
+        [-4,  2,  1,  0x00ffff], [ 4,  2,  1, 0xff00ff],
+        [ 0,  3, -8,  0xffdd00], [-2,  6, -4, 0x00ffff],
+      ];
+      bursts.forEach(([x, y, z, col], i) =>
+        setTimeout(() => launchFireworksAt(x, y, z, col), i * 160)
+      );
+      // Speeders go into overdrive
+      envSpeeders.forEach(s => { s._baseSpeed = s.speed; s.speed *= 3; });
+      setTimeout(() => envSpeeders.forEach(s => { s.speed = s._baseSpeed; }), 3500);
+    }
+
+    function triggerLoseEffect() {
+      flashScreen('rgba(255,0,0,0.4)', 1800);
+      // Rain intensifies
+      envRainCols.forEach(col => col.speeds.forEach((_, i) => col.speeds[i] *= 3));
+      // Speeders crawl to a halt
+      envSpeeders.forEach(s => { s._baseSpeed = s.speed; s.speed *= 0.15; });
+      setTimeout(() => {
+        envRainCols.forEach(col => col.speeds.forEach((_, i) => col.speeds[i] /= 3));
+        envSpeeders.forEach(s => { s.speed = s._baseSpeed; });
+      }, 4000);
+    }
+
     // ---- Score ----
     function scorePoint(playerScored) {
       if (playerScored) playerScore++; else aiScore++;
@@ -904,6 +956,7 @@
       const maxScore = Math.max(p, a);
       if (maxScore >= WIN_SCORE && Math.abs(p - a) >= 2) {
         const playerWon = p > a;
+        if (playerWon) triggerWinEffect(); else triggerLoseEffect();
         document.getElementById('gameover-title').textContent = playerWon ? 'YOU WIN!' : 'DEFEATED';
         document.getElementById('gameover-title').style.color = playerWon ? '#00ffff' : '#ff00ff';
         document.getElementById('gameover-score').textContent = `${p} — ${a}`;
@@ -926,19 +979,25 @@
       ballVel.y += GRAVITY * dt;
       ballPos.addScaledVector(ballVel, dt);
 
-      // Table bounce
+      // Table bounce — only valid when ball is over the table surface
       if (ballPos.y < BALL_R) {
-        ballPos.y = BALL_R;
-        // First bounce after a hit — check it landed on the opponent's side
-        if (!hasBounced && lastHitter) {
-          const ownSide = (lastHitter === 'player' && ballPos.z > 0) ||
-                          (lastHitter === 'ai'     && ballPos.z < 0);
-          if (ownSide) { scorePoint(lastHitter === 'ai'); return; }
+        const overTable = Math.abs(ballPos.x) <= HALF_W && Math.abs(ballPos.z) <= HALF_L;
+        if (overTable) {
+          ballPos.y = BALL_R;
+          // First bounce: must land on opponent's side
+          if (!hasBounced && lastHitter) {
+            const ownSide = (lastHitter === 'player' && ballPos.z > 0) ||
+                            (lastHitter === 'ai'     && ballPos.z < 0);
+            if (ownSide) { scorePoint(lastHitter === 'ai'); return; }
+          }
+          hasBounced = true;
+          ballVel.y = -ballVel.y * 0.84;
+          ballVel.x *= 0.98;
+          ballVel.z *= 0.98;
+        } else {
+          // Ball hit the floor outside the table — hitter hit it out
+          if (lastHitter) { scorePoint(lastHitter === 'ai'); return; }
         }
-        hasBounced = true;
-        ballVel.y = -ballVel.y * 0.84;
-        ballVel.x *= 0.98;
-        ballVel.z *= 0.98;
       }
 
       // Side walls — out of bounds

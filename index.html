@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>NEON PONG</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; cursor: none; }
+    #score {
+      position: fixed; top: 20px; width: 100%; text-align: center;
+      color: #ff8c00; font: bold 56px 'Courier New', monospace;
+      pointer-events: none; letter-spacing: 18px;
+      text-shadow: 0 0 12px #ff8c00, 0 0 35px #ff6600;
+    }
+    #message {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      color: #ff00ff; font: bold 38px 'Courier New', monospace;
+      text-align: center; pointer-events: none;
+      text-shadow: 0 0 10px #ff00ff, 0 0 30px #ff00ff;
+    }
+    #debug {
+      position: fixed; bottom: 20px; left: 20px;
+      color: #fff; font: 13px 'Courier New', monospace;
+      pointer-events: none; line-height: 1.8;
+      background: rgba(0,0,0,0.5); padding: 10px 14px; border-radius: 6px;
+      border-left: 2px solid #00ffff;
+    }
+    #cursor {
+      position: fixed; width: 14px; height: 14px; border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 0 6px #fff, 0 0 14px #00ffff, 0 0 28px #00ffff44;
+      pointer-events: none; transform: translate(-50%, -50%);
+      z-index: 9999;
+    }
+    #hit-flash {
+      position: fixed;
+      font: bold 20px 'Courier New', monospace;
+      pointer-events: none; text-align: center;
+      transition: opacity 0.4s;
+      transform: translate(-50%, -100%);
+      white-space: nowrap;
+    }
+    .overlay {
+      position: fixed; inset: 0;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: rgba(0,0,5,0.82);
+      font-family: 'Courier New', monospace;
+      gap: 18px;
+    }
+    .overlay h1 {
+      color: #ff8c00; font-size: 58px; letter-spacing: 16px;
+      text-shadow: 0 0 14px #ff8c00, 0 0 40px #ff6600;
+      margin-bottom: 8px;
+    }
+    .overlay h2 {
+      color: #ff8c00; font-size: 42px; letter-spacing: 12px;
+      text-shadow: 0 0 14px #ff8c00, 0 0 40px #ff6600;
+      margin-bottom: 8px;
+    }
+    .overlay .subtitle {
+      color: #555; font-size: 14px; letter-spacing: 6px; margin-bottom: 16px;
+    }
+    .menu-btn {
+      background: transparent; border: 1px solid #00ffff;
+      color: #00ffff; font: bold 18px 'Courier New', monospace;
+      padding: 14px 48px; cursor: pointer; letter-spacing: 4px;
+      text-shadow: 0 0 8px #00ffff; box-shadow: 0 0 10px #00ffff33;
+      transition: all 0.15s; width: 340px; text-align: left;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .menu-btn:hover {
+      background: #00ffff18; box-shadow: 0 0 20px #00ffff88;
+      transform: scale(1.03);
+    }
+    .menu-btn .diff {
+      font-size: 11px; letter-spacing: 2px; opacity: 0.7;
+    }
+    .menu-btn.hard { border-color: #ff00ff; color: #ff00ff; text-shadow: 0 0 8px #ff00ff; box-shadow: 0 0 10px #ff00ff33; }
+    .menu-btn.hard:hover { background: #ff00ff18; box-shadow: 0 0 20px #ff00ff88; }
+    .menu-btn.med  { border-color: #00ffff; }
+    .menu-btn.easy { border-color: #00ff88; color: #00ff88; text-shadow: 0 0 8px #00ff88; box-shadow: 0 0 10px #00ff8833; }
+    .menu-btn.easy:hover { background: #00ff8818; box-shadow: 0 0 20px #00ff8888; }
+    .pause-btn {
+      background: transparent; border: 1px solid #ff8c00;
+      color: #ff8c00; font: bold 16px 'Courier New', monospace;
+      padding: 12px 40px; cursor: pointer; letter-spacing: 4px;
+      text-shadow: 0 0 8px #ff8c00; transition: all 0.15s; width: 260px; text-align: center;
+    }
+    .pause-btn:hover { background: #ff8c0018; box-shadow: 0 0 18px #ff8c0088; transform: scale(1.03); }
+  </style>
+</head>
+<body>
+  <div id="cursor"></div>
+  <div id="score" style="display:none">0 — 0</div>
+  <div id="message" style="display:none"></div>
+  <div id="debug"></div>
+  <div id="hit-flash"></div>
+
+  <!-- Start Menu -->
+  <div id="start-menu" class="overlay">
+    <h1>NEON PONG</h1>
+    <div class="subtitle">SELECT OPPONENT</div>
+    <button class="menu-btn easy" data-speed="0.7"  data-color="0x00ff88">JOHN   <span class="diff">SUPER EASY</span></button>
+    <button class="menu-btn med"  data-speed="0.25" data-color="0x00ffff">ARYAN  <span class="diff">MEDIUM</span></button>
+    <button class="menu-btn hard" data-speed="0.05" data-color="0xff00ff">MANAN  <span class="diff">DIFFICULT</span></button>
+  </div>
+
+  <!-- Game Over -->
+  <div id="gameover-menu" class="overlay" style="display:none">
+    <h1 id="gameover-title">YOU WIN</h1>
+    <div id="gameover-score" class="subtitle" style="font-size:22px;letter-spacing:8px;color:#fff;margin-bottom:12px"></div>
+    <button class="pause-btn" id="btn-playagain">PLAY AGAIN</button>
+  </div>
+
+  <!-- Pause Menu -->
+  <div id="pause-menu" class="overlay" style="display:none">
+    <h2>PAUSED</h2>
+    <button class="pause-btn" id="btn-resume">RESUME</button>
+    <button class="pause-btn" id="btn-newgame">NEW GAME</button>
+  </div>
+
+  <script src="https://unpkg.com/three@0.134.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.134.0/examples/js/shaders/CopyShader.js"></script>
+  <script src="https://unpkg.com/three@0.134.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+  <script src="https://unpkg.com/three@0.134.0/examples/js/postprocessing/EffectComposer.js"></script>
+  <script src="https://unpkg.com/three@0.134.0/examples/js/postprocessing/RenderPass.js"></script>
+  <script src="https://unpkg.com/three@0.134.0/examples/js/postprocessing/ShaderPass.js"></script>
+  <script src="https://unpkg.com/three@0.134.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+  <script>
+    // ---- Scene ----
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x000008);
+    scene.fog = new THREE.FogExp2(0x000008, 0.03);
+
+    const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 100);
+    camera.position.set(0, 2.8, 8);
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(devicePixelRatio);
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.toneMapping = THREE.ReinhardToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    document.body.appendChild(renderer.domElement);
+
+    // ---- Bloom ----
+    const composer = new THREE.EffectComposer(renderer);
+    composer.addPass(new THREE.RenderPass(scene, camera));
+    const bloom = new THREE.UnrealBloomPass(
+      new THREE.Vector2(innerWidth, innerHeight),
+      1.4,   // strength
+      0.6,   // radius
+      0.08   // threshold — low so all bright things glow
+    );
+    composer.addPass(bloom);
+
+    // ---- Lighting (minimal — neon is self-lit) ----
+    scene.add(new THREE.AmbientLight(0x111133, 1.5));
+
+    // Dynamic ball light — moves with ball
+    const ballLight = new THREE.PointLight(0xffffff, 2, 5);
+    scene.add(ballLight);
+
+    // Atmosphere lights
+    const cyanAtmos = new THREE.PointLight(0x00ffff, 0.8, 10);
+    cyanAtmos.position.set(0, 3, 5);
+    scene.add(cyanAtmos);
+    const magentaAtmos = new THREE.PointLight(0xff00ff, 0.8, 10);
+    magentaAtmos.position.set(0, 3, -5);
+    scene.add(magentaAtmos);
+
+    // ---- Materials ----
+    const matCyan    = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+    const matMagenta = new THREE.MeshBasicMaterial({ color: 0xff00ff });
+    const matWhite   = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const matDimCyan = new THREE.MeshBasicMaterial({ color: 0x003333 });
+    const matDark    = new THREE.MeshStandardMaterial({ color: 0x020215, roughness: 0.8, metalness: 0.2 });
+
+    // ---- Neon grid floor ----
+    const gridA = new THREE.GridHelper(60, 60, 0x004466, 0x002233);
+    gridA.position.y = -0.85;
+    scene.add(gridA);
+
+    // ---- Table ----
+    const TW = 5, TL = 9, TH = 0.08;
+    const table = new THREE.Mesh(new THREE.BoxGeometry(TW, TH, TL), matDark);
+    table.position.y = -TH / 2;
+    scene.add(table);
+
+    // Neon table edge lines
+    function neonBox(w, h, d, x, y, z, mat) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat || matCyan);
+      m.position.set(x, y, z);
+      scene.add(m);
+      return m;
+    }
+
+    const EY = 0.006;
+    neonBox(TW,   0.008, 0.03,  0,     EY,  TL / 2);   // near edge
+    neonBox(TW,   0.008, 0.03,  0,     EY, -TL / 2);   // far edge
+    neonBox(0.03, 0.008, TL,    TW/2,  EY,  0);         // right edge
+    neonBox(0.03, 0.008, TL,   -TW/2,  EY,  0);         // left edge
+    neonBox(TW,   0.005, 0.015, 0,     EY,  0, matDimCyan); // center width line
+    neonBox(0.015,0.005, TL,    0,     EY,  0, matDimCyan); // center length line
+
+    // Table corner glow posts
+    [[TW/2, TL/2],[TW/2,-TL/2],[-TW/2,TL/2],[-TW/2,-TL/2]].forEach(([x,z]) => {
+      neonBox(0.04, 0.12, 0.04, x, 0.06, z);
+    });
+
+    // ---- Net ----
+    neonBox(TW, 0.18, 0.015, 0, 0.09, 0, matWhite);     // net bar
+    neonBox(0.03, 0.22, 0.03, -TW/2, 0.11, 0, matWhite); // left post
+    neonBox(0.03, 0.22, 0.03,  TW/2, 0.11, 0, matWhite); // right post
+
+    // ---- Paddles ----
+    const PW = 0.5, PH = 0.5, PD = 0.022; // collision bounds = head circle diameter
+    const HEAD_R = 0.25;
+    const HANDLE_W = 0.075, HANDLE_H = 0.24;
+
+    function createPaddle(neonColor) {
+      const group = new THREE.Group();
+
+      // Head — circular disc facing along Z
+      const head = new THREE.Mesh(
+        new THREE.CylinderGeometry(HEAD_R, HEAD_R, PD, 48),
+        new THREE.MeshBasicMaterial({ color: neonColor })
+      );
+      head.rotation.x = Math.PI / 2;
+      group.add(head);
+
+      // Handle — dark grip
+      const handle = new THREE.Mesh(
+        new THREE.BoxGeometry(HANDLE_W, HANDLE_H, PD),
+        new THREE.MeshBasicMaterial({ color: 0x0d0d0d })
+      );
+      handle.position.y = -(HEAD_R + HANDLE_H / 2 - 0.01);
+      group.add(handle);
+
+      // Grip tape lines (neon stripes on handle for cyberpunk look)
+      for (let i = 0; i < 3; i++) {
+        const stripe = new THREE.Mesh(
+          new THREE.BoxGeometry(HANDLE_W, 0.01, PD + 0.002),
+          new THREE.MeshBasicMaterial({ color: neonColor })
+        );
+        stripe.position.y = -(HEAD_R + 0.06 + i * 0.08);
+        group.add(stripe);
+      }
+
+      scene.add(group);
+      return group;
+    }
+
+    const playerPaddle = createPaddle(0xff2200);
+    const aiPaddle    = createPaddle(0xff00ff);
+
+    function setPaddleColor(paddle, color) {
+      paddle.children.forEach(child => {
+        if (child.material && child.material.color.getHex() !== 0x0d0d0d) {
+          child.material.color.setHex(color);
+        }
+      });
+    }
+
+    // ---- Ball ----
+    const BALL_R = 0.065;
+    const ballMesh = new THREE.Mesh(new THREE.SphereGeometry(BALL_R, 20, 20), matWhite);
+    scene.add(ballMesh);
+
+    // Ball shadow (shows XZ position on table — critical for 3D depth perception)
+    const shadowMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, depthWrite: false });
+    const shadowMesh = new THREE.Mesh(new THREE.CircleGeometry(0.14, 20), shadowMat);
+    shadowMesh.rotation.x = -Math.PI / 2;
+    shadowMesh.position.y = 0.003;
+    scene.add(shadowMesh);
+
+    // Ball trail
+    const TRAIL_LEN = 6;
+    const trail = Array.from({ length: TRAIL_LEN }, (_, i) => {
+      const t = new THREE.Mesh(
+        new THREE.SphereGeometry(BALL_R * (1 - i * 0.13), 8, 8),
+        new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.5 - i * 0.07 })
+      );
+      scene.add(t);
+      return t;
+    });
+    const trailHistory = [];
+
+    // ---- Firework particles ----
+    const FIREWORK_COUNT = 80;
+    const fwParticles = Array.from({ length: FIREWORK_COUNT }, () => {
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(0.05, 5, 5),
+        new THREE.MeshBasicMaterial({ color: 0xffffff })
+      );
+      mesh.visible = false;
+      scene.add(mesh);
+      return { mesh, pos: new THREE.Vector3(), vel: new THREE.Vector3(), life: 0 };
+    });
+
+    function launchFireworks(cornerZ, color) {
+      [-TW / 2, TW / 2].forEach(cx => {
+        let spawned = 0;
+        for (const p of fwParticles) {
+          if (p.life <= 0 && spawned < 20) {
+            p.mesh.material.color.setHex(color);
+            p.pos.set(cx, 0.1, cornerZ);
+            p.vel.set((Math.random() - 0.5) * 5, Math.random() * 5 + 3, (Math.random() - 0.5) * 3);
+            p.life = 1;
+            p.mesh.visible = true;
+            p.mesh.scale.setScalar(1);
+            spawned++;
+          }
+        }
+      });
+    }
+
+    // ---- Constants ----
+    const PLAYER_Z  = 4.2;
+    const AI_Z      = -4.2;
+    const GRAVITY   = -12;
+    const NET_H     = 0.18;
+    const HALF_W    = TW / 2;
+    const HALF_L    = TL / 2;
+    const WIN_SCORE = 6;
+    const AI_SPEED = 4.2; // fixed for all difficulties
+    let aiError = 0.5;    // positional aim error — higher = easier
+    let aiErrorOffset = 0; // miss offset committed once per incoming ball
+    let aiTargetX = 0;
+    let aiWasApproaching = false;
+    const HIT_MARGIN = 0.28;
+
+    // ---- State ----
+    const ballPos = new THREE.Vector3();
+    const ballVel = new THREE.Vector3();
+    let playerScore = 0, aiScore = 0;
+    let state = 'menu';
+    let pointTimer = 0;
+    let lastTime = null;
+    let prevPlayerX = 0;
+    let playerPaddleVelX = 0;
+    let lastHitter = null; // 'player' | 'ai'
+    let hasBounced = false; // did ball bounce on table since last paddle hit?
+    let mouseDown = false;
+    document.addEventListener('mousedown', e => { if (e.button === 0) mouseDown = true; });
+    document.addEventListener('mouseup',   e => { if (e.button === 0) mouseDown = false; });
+
+    playerPaddle.position.set(0, 0.3, PLAYER_Z);
+    aiPaddle.position.set(0, 0.3, AI_Z);
+
+    // Serve fix: vy=5 + vz=4 gives ~y=1.24 when crossing net — safely clears NET_H=0.18
+    function resetBall(playerServes) {
+      ballPos.set(0, 1.2, playerServes ? PLAYER_Z - 0.5 : AI_Z + 0.5);
+      ballVel.set((Math.random() - 0.5) * 1.5, 5, playerServes ? -4 : 4);
+      trailHistory.length = 0;
+      lastHitter = null;
+      hasBounced = false;
+    }
+
+    // ---- Mouse ----
+    const mouse = new THREE.Vector2();
+    const raycaster = new THREE.Raycaster();
+    const paddlePlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -PLAYER_Z);
+
+    const cursorEl = document.getElementById('cursor');
+    document.addEventListener('mousemove', e => {
+      mouse.x = (e.clientX / innerWidth) * 2 - 1;
+      mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+      cursorEl.style.left = e.clientX + 'px';
+      cursorEl.style.top  = e.clientY + 'px';
+    });
+
+    function startGame(speed, color) {
+      aiError = speed;
+      setPaddleColor(aiPaddle, color);
+      playerScore  = 0;
+      aiScore      = 0;
+      document.getElementById('score').textContent = '0 — 0';
+      document.getElementById('message').style.display = 'none';
+      document.getElementById('gameover-menu').style.display = 'none';
+      document.getElementById('score').style.display = 'block';
+      document.getElementById('start-menu').style.display = 'none';
+      document.getElementById('pause-menu').style.display = 'none';
+      state = 'playing';
+      resetBall(true);
+    }
+
+    document.querySelectorAll('.menu-btn').forEach(btn => {
+      btn.addEventListener('click', () => startGame(parseFloat(btn.dataset.speed), parseInt(btn.dataset.color, 16)));
+    });
+
+    document.getElementById('btn-resume').addEventListener('click', () => {
+      document.getElementById('pause-menu').style.display = 'none';
+      state = 'playing';
+    });
+
+    document.getElementById('btn-playagain').addEventListener('click', () => {
+      document.getElementById('gameover-menu').style.display = 'none';
+      document.getElementById('start-menu').style.display = 'flex';
+      state = 'menu';
+    });
+
+    document.getElementById('btn-newgame').addEventListener('click', () => {
+      document.getElementById('score').style.display = 'none';
+      document.getElementById('pause-menu').style.display = 'none';
+      document.getElementById('start-menu').style.display = 'flex';
+      state = 'menu';
+    });
+
+    document.addEventListener('keydown', e => {
+      if (e.code === 'Escape') {
+        if (state === 'playing' || state === 'point') {
+          state = 'paused';
+          document.getElementById('pause-menu').style.display = 'flex';
+        } else if (state === 'paused') {
+          document.getElementById('pause-menu').style.display = 'none';
+          state = 'playing';
+        }
+      }
+    });
+
+    // ---- Paddle collision ----
+    function checkHit(paddle, isPlayer) {
+      const { x: px, y: py, z: pz } = paddle.position;
+      const inX = Math.abs(ballPos.x - px) < PW / 2 + BALL_R + HIT_MARGIN;
+      const inY = Math.abs(ballPos.y - py) < PH / 2 + BALL_R + HIT_MARGIN;
+      const approaching = isPlayer
+        ? ballPos.z > pz - 0.3 && ballPos.z < pz + 0.1 && ballVel.z > 0
+        : ballPos.z < pz + 0.3 && ballPos.z > pz - 0.1 && ballVel.z < 0;
+
+      if (inX && inY && approaching) {
+        const relX = (ballPos.x - px) / (PW / 2);
+        const rawSpeed = Math.hypot(ballVel.x, ballVel.y, ballVel.z);
+        const speed = isPlayer
+          ? (mouseDown
+              ? Math.max(4.0, Math.min(rawSpeed * 1.1 + 1.5, 12))   // lunge: power shot
+              : Math.max(1.5, Math.min(rawSpeed * 0.55, 6)))          // passive: absorbs speed
+          : Math.max(3.5, Math.min(rawSpeed * 1.08 + 1.5, 12));      // AI unchanged
+
+        ballVel.z = isPlayer ? -speed * 0.85 : speed * 0.85;
+        ballVel.x = isPlayer
+          ? playerPaddleVelX * 0.3 + relX * speed * 0.15
+          : relX * speed * 0.4;
+        ballVel.y = isPlayer ? 3 + Math.random() * 0.5 : 4.4 + Math.random() * 0.5;
+        ballPos.z = isPlayer ? pz - BALL_R - 0.02 : pz + BALL_R + 0.02;
+        lastHitter = isPlayer ? 'player' : 'ai';
+        hasBounced = false;
+
+        if (isPlayer) {
+          const el = document.getElementById('hit-flash');
+          el.textContent = `HIT  ×${speed.toFixed(1)}`;
+          el.style.color = '#00ffff';
+          el.style.textShadow = '0 0 12px #00ffff';
+          el.style.opacity = '1';
+          clearTimeout(el._t);
+          el._t = setTimeout(() => el.style.opacity = '0', 900);
+        }
+      }
+    }
+
+    // ---- AI ----
+    function updateAI(dt) {
+      const ballComingToAI = ballVel.z < 0;
+
+      // Lock in a miss offset once per incoming ball
+      if (ballComingToAI && !aiWasApproaching) {
+        aiErrorOffset = (Math.random() - 0.5) * aiError;
+      }
+      aiWasApproaching = ballComingToAI;
+
+      // Predict where ball will arrive at AI's Z, update every frame so table bounces are tracked
+      if (ballComingToAI && Math.abs(ballVel.z) > 0.01) {
+        const timeToAI = (AI_Z - ballPos.z) / ballVel.z;
+        const predictedX = ballPos.x + ballVel.x * timeToAI;
+        aiTargetX = Math.max(-HALF_W + 0.1, Math.min(HALF_W - 0.1, predictedX + aiErrorOffset));
+      } else if (!ballComingToAI) {
+        aiTargetX = 0; // return to center
+      }
+
+      const targetX = aiTargetX;
+      const targetY = ballComingToAI ? Math.max(0.2, ballPos.y) : 0.3;
+      const step = AI_SPEED * dt;
+      const dx = targetX - aiPaddle.position.x;
+      const dy = targetY - aiPaddle.position.y;
+      aiPaddle.position.x += Math.sign(dx) * Math.min(Math.abs(dx), step);
+      aiPaddle.position.y += Math.sign(dy) * Math.min(Math.abs(dy), step);
+      aiPaddle.position.x = Math.max(-HALF_W + PW / 2, Math.min(HALF_W - PW / 2, aiPaddle.position.x));
+      aiPaddle.position.y = Math.max(0.1, Math.min(1.4, aiPaddle.position.y));
+    }
+
+    // ---- Status message (deuce / match point) ----
+    function updateStatusMessage() {
+      const p = playerScore, a = aiScore;
+      const msgEl = document.getElementById('message');
+      let msg = '';
+      if (p >= WIN_SCORE - 1 && a >= WIN_SCORE - 1) {
+        if (p === a) {
+          msg = 'DEUCE';
+        } else {
+          msg = (p > a ? 'YOUR' : 'OPPONENT') + ' MATCH POINT';
+        }
+      } else if (p === WIN_SCORE - 1) {
+        msg = 'YOUR MATCH POINT';
+      } else if (a === WIN_SCORE - 1) {
+        msg = 'OPPONENT MATCH POINT';
+      }
+      msgEl.textContent = msg;
+      msgEl.style.display = msg ? 'block' : 'none';
+    }
+
+    // ---- Score ----
+    function scorePoint(playerScored) {
+      if (playerScored) playerScore++; else aiScore++;
+      document.getElementById('score').textContent = `${playerScore} — ${aiScore}`;
+      launchFireworks(playerScored ? HALF_L : -HALF_L, playerScored ? 0x00ffff : 0xff00ff);
+
+      // Check win: first to WIN_SCORE, must lead by 2 (deuce rule)
+      const p = playerScore, a = aiScore;
+      const maxScore = Math.max(p, a);
+      if (maxScore >= WIN_SCORE && Math.abs(p - a) >= 2) {
+        const playerWon = p > a;
+        document.getElementById('gameover-title').textContent = playerWon ? 'YOU WIN!' : 'DEFEATED';
+        document.getElementById('gameover-title').style.color = playerWon ? '#00ffff' : '#ff00ff';
+        document.getElementById('gameover-score').textContent = `${p} — ${a}`;
+        document.getElementById('gameover-menu').style.display = 'flex';
+        document.getElementById('score').style.display = 'none';
+        document.getElementById('message').style.display = 'none';
+        state = 'gameover';
+        return;
+      }
+
+      updateStatusMessage();
+      state = 'point';
+      pointTimer = 2;
+    }
+
+    // ---- Update ----
+    function update(dt) {
+      if (state !== 'playing') return;
+
+      ballVel.y += GRAVITY * dt;
+      ballPos.addScaledVector(ballVel, dt);
+
+      // Table bounce
+      if (ballPos.y < BALL_R) {
+        ballPos.y = BALL_R;
+        // First bounce after a hit — check it landed on the opponent's side
+        if (!hasBounced && lastHitter) {
+          const ownSide = (lastHitter === 'player' && ballPos.z > 0) ||
+                          (lastHitter === 'ai'     && ballPos.z < 0);
+          if (ownSide) { scorePoint(lastHitter === 'ai'); return; }
+        }
+        hasBounced = true;
+        ballVel.y = -ballVel.y * 0.84;
+        ballVel.x *= 0.98;
+        ballVel.z *= 0.98;
+      }
+
+      // Side walls — out of bounds
+      if (Math.abs(ballPos.x) > HALF_W + 0.3) {
+        scorePoint(!hasBounced ? lastHitter === 'ai' : lastHitter === 'player');
+        return;
+      }
+
+      // Net — hitter loses the point immediately
+      if (Math.abs(ballPos.z) < 0.04 + BALL_R && ballPos.y < NET_H + BALL_R) {
+        scorePoint(lastHitter === 'ai');
+        return;
+      }
+
+      // Dead ball — too slow to continue, hitter loses
+      if (lastHitter && Math.hypot(ballVel.x, ballVel.z) < 0.4 && ballPos.y < BALL_R + 0.05) {
+        scorePoint(lastHitter === 'ai');
+        return;
+      }
+
+      checkHit(playerPaddle, true);
+      checkHit(aiPaddle, false);
+
+      // Ball exits ends — hitter loses if no bounce, receiver loses if bounced
+      if (ballPos.z >  HALF_L + 0.5) { scorePoint(!hasBounced ? lastHitter === 'ai' : lastHitter === 'player'); return; }
+      if (ballPos.z < -HALF_L - 0.5) { scorePoint(!hasBounced ? lastHitter === 'ai' : lastHitter === 'player'); return; }
+
+      // Ball mesh + light + shadow
+      ballMesh.position.copy(ballPos);
+      ballLight.position.copy(ballPos);
+      shadowMesh.position.x = ballPos.x;
+      shadowMesh.position.z = ballPos.z;
+      shadowMat.opacity = Math.max(0, 0.6 * (1 - ballPos.y / 1.8));
+
+      // Trail
+      trailHistory.unshift(ballPos.clone());
+      if (trailHistory.length > TRAIL_LEN) trailHistory.pop();
+      trail.forEach((t, i) => t.position.copy(trailHistory[i] || ballPos));
+
+      // Player paddle: mouse X/Y → paddle X/Y, with automatic Z arc
+      // High paddle = slightly back (swing room), low paddle = slightly forward (reaching)
+      raycaster.setFromCamera(mouse, camera);
+      const hit = new THREE.Vector3();
+      if (raycaster.ray.intersectPlane(paddlePlane, hit)) {
+        playerPaddle.position.x = Math.max(-HALF_W - 0.8, Math.min(HALF_W + 0.8, hit.x));
+        playerPaddle.position.y = Math.max(0.05, Math.min(1.5, hit.y));
+      }
+      // Lunge on left click: mostly Z forward, slight Y dip
+      const restZ   = PLAYER_Z + (playerPaddle.position.y - 0.4) * 0.3;
+      const lungeZ  = PLAYER_Z - 0.9;
+      const targetZ = mouseDown ? lungeZ : restZ;
+      playerPaddle.position.z += (targetZ - playerPaddle.position.z) * Math.min(1, dt * 14);
+      if (mouseDown) {
+        playerPaddle.position.y = Math.max(0.05, playerPaddle.position.y - dt * 1.2);
+      }
+      playerPaddleVelX = (playerPaddle.position.x - prevPlayerX) / dt;
+      prevPlayerX = playerPaddle.position.x;
+
+      updateAI(dt);
+
+      // Project player paddle to screen space — position hit-flash label near it
+      const paddleScreen = playerPaddle.position.clone().project(camera);
+      const hf = document.getElementById('hit-flash');
+      hf.style.left = ((paddleScreen.x + 1) / 2 * innerWidth) + 'px';
+      hf.style.top  = ((-paddleScreen.y + 1) / 2 * innerHeight - 20) + 'px';
+
+      // Debug HUD
+      const ballSpeed = Math.hypot(ballVel.x, ballVel.y, ballVel.z);
+      document.getElementById('debug').innerHTML =
+        `ball speed:  <b>${ballSpeed.toFixed(2)}</b><br>` +
+        `last hitter: <b>${lastHitter || '—'}</b>`;
+
+      // Paddle tilt: forehand (X > 0) vs backhand (X < 0)
+      const maxTilt = Math.PI / 5; // 36 degrees
+      playerPaddle.rotation.z = -(playerPaddle.position.x / HALF_W) * maxTilt;
+      aiPaddle.rotation.z     =  (aiPaddle.position.x    / HALF_W) * maxTilt;
+    }
+
+    // ---- Loop ----
+    function loop(ts) {
+      if (!lastTime) lastTime = ts;
+      const dt = Math.min((ts - lastTime) / 1000, 0.05);
+      lastTime = ts;
+
+      if (state === 'point') {
+        pointTimer -= dt;
+        if (pointTimer <= 0) {
+          state = 'playing';
+          resetBall(aiScore > playerScore);
+        }
+      }
+
+      update(dt);
+
+      // Firework particle update (runs regardless of game state)
+      for (const p of fwParticles) {
+        if (p.life > 0) {
+          p.life -= dt * 1.1;
+          p.vel.y -= 10 * dt;
+          p.pos.addScaledVector(p.vel, dt);
+          p.mesh.position.copy(p.pos);
+          p.mesh.scale.setScalar(Math.max(0.01, p.life));
+          if (p.life <= 0) p.mesh.visible = false;
+        }
+      }
+
+      composer.render();
+      requestAnimationFrame(loop);
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+      composer.setSize(innerWidth, innerHeight);
+    });
+
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
